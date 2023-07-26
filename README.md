@@ -100,3 +100,10 @@ This plugin development is in progress. You may encounter breaking changes each 
 some feature which is supported by other players available in pub dev, then feel free to create PR. All valuable contributions are welcome!
 
 
+## Change Log
+- 2023-07-17
+    - Update sepeed chooser widget	c52c478
+- 2023-06-20
+    -  Fix ios playback speed problem	b45d343
+-  2022-04-27
+    - add nil check	6aba0df	
