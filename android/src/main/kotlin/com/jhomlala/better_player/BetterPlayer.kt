@@ -411,22 +411,22 @@ internal class BetterPlayer(
                 DefaultSsChunkSource.Factory(mediaDataSourceFactory),
                 DefaultDataSource.Factory(context, mediaDataSourceFactory)
             )
-                .setDrmSessionManagerProvider(drmSessionManagerProvider)
+                .setDrmSessionManagerProvider(drmSessionManagerProvider!!)
                 .createMediaSource(mediaItem)
             C.TYPE_DASH -> DashMediaSource.Factory(
                 DefaultDashChunkSource.Factory(mediaDataSourceFactory),
                 DefaultDataSource.Factory(context, mediaDataSourceFactory)
             )
-                .setDrmSessionManagerProvider(drmSessionManagerProvider)
+                .setDrmSessionManagerProvider(drmSessionManagerProvider!!)
                 .createMediaSource(mediaItem)
             C.TYPE_HLS -> HlsMediaSource.Factory(mediaDataSourceFactory)
-                .setDrmSessionManagerProvider(drmSessionManagerProvider)
+                .setDrmSessionManagerProvider(drmSessionManagerProvider!!)
                 .createMediaSource(mediaItem)
             C.TYPE_OTHER -> ProgressiveMediaSource.Factory(
                 mediaDataSourceFactory,
                 DefaultExtractorsFactory()
             )
-                .setDrmSessionManagerProvider(drmSessionManagerProvider)
+                .setDrmSessionManagerProvider(drmSessionManagerProvider!!)
                 .createMediaSource(mediaItem)
             else -> {
                 throw IllegalStateException("Unsupported type: $type")
@@ -707,13 +707,11 @@ internal class BetterPlayer(
             val builder = trackSelector.parameters.buildUpon()
                 .setRendererDisabled(rendererIndex, false)
                 .addOverride(
-                    TrackSelectionOverride(
                         TrackSelectionOverride(
                             mappedTrackInfo.getTrackGroups(rendererIndex).get(groupIndex),
                             mappedTrackInfo.getTrackGroups(rendererIndex)
                                 .indexOf(mappedTrackInfo.getTrackGroups(rendererIndex).get(groupIndex))
-                        )
-                    ).build()
+                    )
                 )
 
             trackSelector.setParameters(builder)
