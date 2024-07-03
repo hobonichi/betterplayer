@@ -101,9 +101,11 @@ some feature which is supported by other players available in pub dev, then feel
 
 
 ## Change Log
+- 2024-06-03
+    - upgrade exoplayer for Android 14
 - 2023-07-17
     - Update sepeed chooser widget	c52c478
 - 2023-06-20
     -  Fix ios playback speed problem	b45d343
 -  2022-04-27
-    - add nil check	6aba0df	
+    - add nil check	6aba0df
