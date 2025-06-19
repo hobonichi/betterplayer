@@ -23,9 +23,9 @@ class BetterPlayerTranslations {
       this.playlistLoadingNextVideo = "Loading next video",
       this.controlsLive = "LIVE",
       this.controlsNextVideoIn = "Next video in",
-      this.overflowMenuPlaybackSpeed = "Playback speed",
+      this.overflowMenuPlaybackSpeed = "再生速度の変更",
       this.overflowMenuSubtitles = "Subtitles",
-      this.overflowMenuQuality = "Quality",
+      this.overflowMenuQuality = "画質",
       this.overflowMenuAudioTracks = "Audio",
       this.qualityAuto = "Auto"});
 

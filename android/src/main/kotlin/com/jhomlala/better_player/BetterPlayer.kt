@@ -57,8 +57,7 @@ import com.google.android.exoplayer2.*
 import com.google.android.exoplayer2.audio.AudioAttributes
 import com.google.android.exoplayer2.drm.DrmSessionManagerProvider
 import com.google.android.exoplayer2.ext.mediasession.MediaSessionConnector
-import com.google.android.exoplayer2.trackselection.DefaultTrackSelector.SelectionOverride
-import com.google.android.exoplayer2.trackselection.TrackSelectionOverrides
+import com.google.android.exoplayer2.trackselection.TrackSelectionOverride
 import com.google.android.exoplayer2.upstream.DataSource
 import com.google.android.exoplayer2.upstream.DefaultDataSource
 import com.google.android.exoplayer2.util.Util
@@ -412,22 +411,38 @@ internal class BetterPlayer(
                 DefaultSsChunkSource.Factory(mediaDataSourceFactory),
                 DefaultDataSource.Factory(context, mediaDataSourceFactory)
             )
-                .setDrmSessionManagerProvider(drmSessionManagerProvider)
+                .apply {
+                    if (drmSessionManagerProvider != null) {
+                        setDrmSessionManagerProvider(drmSessionManagerProvider!!)
+                    }
+                }
                 .createMediaSource(mediaItem)
             C.TYPE_DASH -> DashMediaSource.Factory(
                 DefaultDashChunkSource.Factory(mediaDataSourceFactory),
                 DefaultDataSource.Factory(context, mediaDataSourceFactory)
             )
-                .setDrmSessionManagerProvider(drmSessionManagerProvider)
+                .apply {
+                    if (drmSessionManagerProvider != null) {
+                        setDrmSessionManagerProvider(drmSessionManagerProvider!!)
+                    }
+                }
                 .createMediaSource(mediaItem)
             C.TYPE_HLS -> HlsMediaSource.Factory(mediaDataSourceFactory)
-                .setDrmSessionManagerProvider(drmSessionManagerProvider)
+                .apply {
+                    if (drmSessionManagerProvider != null) {
+                        setDrmSessionManagerProvider(drmSessionManagerProvider!!)
+                    }
+                }
                 .createMediaSource(mediaItem)
             C.TYPE_OTHER -> ProgressiveMediaSource.Factory(
                 mediaDataSourceFactory,
                 DefaultExtractorsFactory()
             )
-                .setDrmSessionManagerProvider(drmSessionManagerProvider)
+                .apply {
+                    if (drmSessionManagerProvider != null) {
+                        setDrmSessionManagerProvider(drmSessionManagerProvider!!)
+                    }
+                }
                 .createMediaSource(mediaItem)
             else -> {
                 throw IllegalStateException("Unsupported type: $type")
@@ -707,14 +722,12 @@ internal class BetterPlayer(
         if (mappedTrackInfo != null) {
             val builder = trackSelector.parameters.buildUpon()
                 .setRendererDisabled(rendererIndex, false)
-                .setTrackSelectionOverrides(
-                    TrackSelectionOverrides.Builder().addOverride(
-                        TrackSelectionOverrides.TrackSelectionOverride(
-                            mappedTrackInfo.getTrackGroups(
-                                rendererIndex
-                            ).get(groupIndex)
-                        )
-                    ).build()
+                .addOverride(
+                        TrackSelectionOverride(
+                            mappedTrackInfo.getTrackGroups(rendererIndex).get(groupIndex),
+                            mappedTrackInfo.getTrackGroups(rendererIndex)
+                                .indexOf(mappedTrackInfo.getTrackGroups(rendererIndex).get(groupIndex))
+                    )
                 )
 
             trackSelector.setParameters(builder)
