@@ -208,13 +208,15 @@ bool _remoteCommandsInitialized = false;
                             NSURL *nsImageUrl =[NSURL URLWithString:imageUrl];
                             tempArtworkImage = [UIImage imageWithData:[NSData dataWithContentsOfURL:nsImageUrl]];
                         }
-                        if(tempArtworkImage)
-                        {
-                            MPMediaItemArtwork* artworkImage = [[MPMediaItemArtwork alloc] initWithImage: tempArtworkImage];
-                            [_artworkImageDict setObject:artworkImage forKey:key];
-                            [nowPlayingInfoDict setObject:artworkImage forKey:MPMediaItemPropertyArtwork];
-                        }
-                        [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = nowPlayingInfoDict;
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            if(tempArtworkImage)
+                            {
+                                MPMediaItemArtwork* artworkImage = [[MPMediaItemArtwork alloc] initWithImage: tempArtworkImage];
+                                [_artworkImageDict setObject:artworkImage forKey:key];
+                                [nowPlayingInfoDict setObject:artworkImage forKey:MPMediaItemPropertyArtwork];
+                            }
+                            [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = nowPlayingInfoDict;
+                        });
                     }
                     @catch(NSException *exception) {
 
