@@ -14,6 +14,8 @@
 NSMutableDictionary* _dataSourceDict;
 NSMutableDictionary*  _timeObserverIdDict;
 NSMutableDictionary*  _artworkImageDict;
+NSMutableSet*  _artworkLoadingKeys;
+NSMutableSet*  _artworkFailedKeys;
 CacheManager* _cacheManager;
 int texturesCount = -1;
 BetterPlayer* _notificationPlayer;
@@ -39,6 +41,8 @@ bool _remoteCommandsInitialized = false;
     _players = [NSMutableDictionary dictionaryWithCapacity:1];
     _timeObserverIdDict = [NSMutableDictionary dictionary];
     _artworkImageDict = [NSMutableDictionary dictionary];
+    _artworkLoadingKeys = [NSMutableSet set];
+    _artworkFailedKeys = [NSMutableSet set];
     _dataSourceDict = [NSMutableDictionary dictionary];
     _cacheManager = [[CacheManager alloc] init];
     [_cacheManager setup];
@@ -177,63 +181,94 @@ bool _remoteCommandsInitialized = false;
 }
 
 - (void) setupRemoteCommandNotification:(BetterPlayer*)player, NSString* title, NSString* author , NSString* imageUrl{
+    // dispose 済みプレイヤーに対する遅延コールバックでは textureId を引けない。
+    // nil のまま進むと辞書のキーに nil を渡して NSInvalidArgumentException になる
+    NSNumber* key = [self getTextureId:player];
+    if (key == nil){
+        return;
+    }
+
     float positionInSeconds = player.position /1000;
     float durationInSeconds = player.duration/ 1000;
 
-
-    NSMutableDictionary * nowPlayingInfoDict = [@{MPMediaItemPropertyArtist: author,
-                                                  MPMediaItemPropertyTitle: title,
-                                                  MPNowPlayingInfoPropertyElapsedPlaybackTime: [ NSNumber numberWithFloat : positionInSeconds],
-                                                  MPMediaItemPropertyPlaybackDuration: [NSNumber numberWithFloat:durationInSeconds],
-                                                  MPNowPlayingInfoPropertyPlaybackRate: @1,
+    NSMutableDictionary * nowPlayingInfoDict = [@{
+        MPNowPlayingInfoPropertyElapsedPlaybackTime: [ NSNumber numberWithFloat : positionInSeconds],
+        MPMediaItemPropertyPlaybackDuration: [NSNumber numberWithFloat:durationInSeconds],
+        MPNowPlayingInfoPropertyPlaybackRate: @1,
     } mutableCopy];
 
-    if (imageUrl != [NSNull null]){
-        NSString* key =  [self getTextureId:player];
-        MPMediaItemArtwork* artworkImage = [_artworkImageDict objectForKey:key];
+    // Dart 側の null は NSNull で届くので、nil 判定だけでは弾けない
+    if ([title isKindOfClass:[NSString class]]){
+        nowPlayingInfoDict[MPMediaItemPropertyTitle] = title;
+    }
+    if ([author isKindOfClass:[NSString class]]){
+        nowPlayingInfoDict[MPMediaItemPropertyArtist] = author;
+    }
 
-        if (key != [NSNull null]){
-            if (artworkImage){
-                [nowPlayingInfoDict setObject:artworkImage forKey:MPMediaItemPropertyArtwork];
-                [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = nowPlayingInfoDict;
+    if (![imageUrl isKindOfClass:[NSString class]] || imageUrl.length == 0){
+        [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = nowPlayingInfoDict;
+        return;
+    }
 
+    MPMediaItemArtwork* cachedArtwork = [_artworkImageDict objectForKey:key];
+    if (cachedArtwork){
+        nowPlayingInfoDict[MPMediaItemPropertyArtwork] = cachedArtwork;
+        [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = nowPlayingInfoDict;
+        return;
+    }
+
+    // artwork の取得を待たずに再生位置などを先に反映する
+    [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = nowPlayingInfoDict;
+
+    // このメソッドは再生中1秒ごとに呼ばれる。取得中・取得失敗のキーを弾かないと
+    // 同じ画像のダウンロードが毎秒積み上がる
+    if ([_artworkLoadingKeys containsObject:key] || [_artworkFailedKeys containsObject:key]){
+        return;
+    }
+    [_artworkLoadingKeys addObject:key];
+
+    NSMutableDictionary* players = _players;
+    dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+    dispatch_async(queue, ^{
+        UIImage * tempArtworkImage = nil;
+        @try{
+            if ([imageUrl rangeOfString:@"http"].location == NSNotFound){
+                tempArtworkImage = [UIImage imageWithContentsOfFile:imageUrl];
             } else {
-                dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
-                dispatch_async(queue, ^{
-                    @try{
-                        UIImage * tempArtworkImage = nil;
-                        if ([imageUrl rangeOfString:@"http"].location == NSNotFound){
-                            tempArtworkImage = [UIImage imageWithContentsOfFile:imageUrl];
-                        } else {
-                            NSURL *nsImageUrl =[NSURL URLWithString:imageUrl];
-                            tempArtworkImage = [UIImage imageWithData:[NSData dataWithContentsOfURL:nsImageUrl]];
-                        }
-                        dispatch_async(dispatch_get_main_queue(), ^{
-                            if(tempArtworkImage)
-                            {
-                                MPMediaItemArtwork* artworkImage = [[MPMediaItemArtwork alloc] initWithImage: tempArtworkImage];
-                                [_artworkImageDict setObject:artworkImage forKey:key];
-                                [nowPlayingInfoDict setObject:artworkImage forKey:MPMediaItemPropertyArtwork];
-                            }
-                            [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = nowPlayingInfoDict;
-                        });
-                    }
-                    @catch(NSException *exception) {
-
-                    }
-                });
+                NSURL *nsImageUrl =[NSURL URLWithString:imageUrl];
+                tempArtworkImage = [UIImage imageWithData:[NSData dataWithContentsOfURL:nsImageUrl]];
             }
         }
-    } else {
-        [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = nowPlayingInfoDict;
-    }
+        @catch(NSException *exception) {
+            tempArtworkImage = nil;
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [_artworkLoadingKeys removeObject:key];
+
+            // ダウンロード中に再生が終わっていると、このキーのプレイヤーはもういない
+            if ([players objectForKey:key] == nil){
+                return;
+            }
+            if (tempArtworkImage == nil){
+                [_artworkFailedKeys addObject:key];
+                return;
+            }
+
+            MPMediaItemArtwork* artworkImage = [[MPMediaItemArtwork alloc] initWithImage: tempArtworkImage];
+            [_artworkImageDict setObject:artworkImage forKey:key];
+            nowPlayingInfoDict[MPMediaItemPropertyArtwork] = artworkImage;
+            [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = nowPlayingInfoDict;
+        });
+    });
 }
 
 
 
-- (NSString*) getTextureId: (BetterPlayer*) player{
+- (NSNumber*) getTextureId: (BetterPlayer*) player{
+    // _players のキーは textureId の NSNumber。dispose 済みなら nil が返る
     NSArray* temp = [_players allKeysForObject: player];
-    NSString* key = [temp lastObject];
+    NSNumber* key = [temp lastObject];
     return key;
 }
 
@@ -242,8 +277,10 @@ bool _remoteCommandsInitialized = false;
         [self setupRemoteCommandNotification:player, title, author, imageUrl];
     }];
 
-    NSString* key =  [self getTextureId:player];
-    [ _timeObserverIdDict setObject:_timeObserverId forKey: key];
+    NSNumber* key =  [self getTextureId:player];
+    if (key != nil){
+        [ _timeObserverIdDict setObject:_timeObserverId forKey: key];
+    }
 }
 
 
@@ -252,20 +289,25 @@ bool _remoteCommandsInitialized = false;
         _notificationPlayer = NULL;
         _remoteCommandsInitialized = false;
     }
-    NSString* key =  [self getTextureId:player];
-    id _timeObserverId = _timeObserverIdDict[key];
-    [_timeObserverIdDict removeObjectForKey: key];
-    [_artworkImageDict removeObjectForKey:key];
-    if (_timeObserverId){
-        [player.player removeTimeObserver:_timeObserverId];
-        _timeObserverId = nil;
+    // nil キーは辞書アクセス自体が例外になるため、引けなかった場合は何もしない
+    NSNumber* key =  [self getTextureId:player];
+    if (key != nil){
+        id _timeObserverId = _timeObserverIdDict[key];
+        [_timeObserverIdDict removeObjectForKey: key];
+        [_artworkImageDict removeObjectForKey:key];
+        [_artworkLoadingKeys removeObject:key];
+        [_artworkFailedKeys removeObject:key];
+        if (_timeObserverId){
+            [player.player removeTimeObserver:_timeObserverId];
+            _timeObserverId = nil;
+        }
     }
     [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo =  @{};
 }
 
 - (void) stopOtherUpdateListener: (BetterPlayer*) player{
-    NSString* currentPlayerTextureId = [self getTextureId:player];
-    for (NSString* textureId in _timeObserverIdDict.allKeys) {
+    NSNumber* currentPlayerTextureId = [self getTextureId:player];
+    for (NSNumber* textureId in _timeObserverIdDict.allKeys) {
         if (currentPlayerTextureId == textureId){
             continue;
         }
